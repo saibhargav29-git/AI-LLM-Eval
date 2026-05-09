@@ -1,4 +1,4 @@
-# AI-LLM-Eval
+# AI-LLM-Evaluation
 
 A CI/CD-style evaluation pipeline for LLM behavior — built as part of a DevOps-to-AI engineering transition.
 
