@@ -1,0 +1,85 @@
+# .github/workflows/llm-evals.yml
+#
+# Runs the LLM eval pipeline on every PR that touches prompts or eval logic.
+# Uses OpenRouter — add OPENROUTER_API_KEY as a repo secret.
+#
+# To test manually with a different model:
+#   Actions → "Run workflow" → set EVAL_MODEL input
+
+name: LLM eval pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "eval_pipeline.py"
+      - "prompts/**"
+      - "golden_dataset/**"
+  pull_request:
+    paths:
+      - "eval_pipeline.py"
+      - "prompts/**"
+      - "golden_dataset/**"
+  schedule:
+    - cron: "0 6 * * *"    # daily — catches upstream model drift
+  workflow_dispatch:
+    inputs:
+      eval_model:
+        description: "OpenRouter model string to evaluate"
+        required: false
+        default: "meta-llama/llama-3.1-8b-instruct"
+
+jobs:
+  eval:
+    name: Run LLM evals
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install openai python-dotenv
+
+      - name: Run eval pipeline
+        run: python eval_pipeline.py
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          EVAL_MODEL: ${{ github.event.inputs.eval_model || 'meta-llama/llama-3.1-8b-instruct' }}
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval_report.json
+          retention-days: 30
+
+      - name: Comment scores on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('eval_report.json'));
+            const emoji = report.pipeline_passed ? '✅' : '❌';
+            const rows = report.results.map(r =>
+              `| \`${r.id}\` | ${r.passed ? '✅' : '❌'} | ${r.overall_score.toFixed(2)} |`
+            ).join('\n');
+            const body = [
+              `## ${emoji} LLM eval results`,
+              `**Model:** \`${report.model}\`  |  **Avg score:** ${report.avg_score.toFixed(2)}  |  **Cases:** ${report.cases_passed}/${report.cases_total}`,
+              '',
+              '| Case | Status | Score |',
+              '|---|---|---|',
+              rows,
+            ].join('\n');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
