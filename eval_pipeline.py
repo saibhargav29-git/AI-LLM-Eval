@@ -406,6 +406,7 @@ def run_eval_pipeline(
 # ---------------------------------------------------------------------------
 # 6. ENTRY POINT
 # ---------------------------------------------------------------------------
+# Adding openrouter API key to Github secrets
 
 if __name__ == "__main__":
     _, passed = run_eval_pipeline(
